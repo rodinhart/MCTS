@@ -153,7 +153,23 @@ const isEnd = board =>
   any(p => (p & board.x) === p || (p & board.o) === p)(WINS)
 
 // Monte Carlo tree search
-const AI = "x"
+const AI = "o"
+
+const better = (a, b) => {
+  if (AI === "x") {
+    return a > b
+  }
+
+  return a < b
+}
+
+const worse = (a, b) => {
+  if (AI === "x") {
+    return a < b
+  }
+
+  return a > b
+}
 
 const createNode = (board, parent) => ({
   parent,
@@ -180,11 +196,13 @@ const iterate = root => {
             ? ubt(node.children[position])
             : Number.MAX_SAFE_INTEGER
 
-        if (score < best.score) return best
+        if (worse(score, best.score)) return best
 
         return {
           score,
-          board: score > best.score ? [newBoard] : best.board.concat([newBoard])
+          board: better(score, best.score)
+            ? [newBoard]
+            : best.board.concat([newBoard])
         }
       },
       {
@@ -215,11 +233,7 @@ const iterate = root => {
   }
 
   // back propegation
-  const score = hasWon(board[AI])
-    ? 1
-    : hasWon(board[AI === "x" ? "o" : "x"])
-    ? 0
-    : 0.5
+  const score = hasWon(board.x) ? 1 : hasWon(board.o) ? 0 : 0.5
   while (node) {
     node.visits += 1
     node.wins += score
@@ -295,9 +309,9 @@ const play = node => {
     }
   }
 
-  if (board.turn === "x") {
+  if (board.turn === AI) {
     // think
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       iterate(node)
     }
     // viz("root", root)
