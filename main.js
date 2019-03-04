@@ -10,24 +10,6 @@ const rl = readline.createInterface({
 })
 
 // Monte Carlo tree search
-const AI = "x"
-
-const better = (a, b) => {
-  if (AI === "x") {
-    return a > b
-  }
-
-  return a < b
-}
-
-const worse = (a, b) => {
-  if (AI === "x") {
-    return a < b
-  }
-
-  return a > b
-}
-
 const createNode = (board, parent) => ({
   parent,
   visits: 0,
@@ -51,21 +33,17 @@ const iterate = root => {
         const score =
           node.children[position] && node.children[position].visits
             ? ubt(node.children[position])
-            : AI === "x"
-            ? Number.MAX_SAFE_INTEGER
-            : Number.MIN_SAFE_INTEGER
+            : Number.MAX_SAFE_INTEGER
 
-        if (worse(score, best.score)) return best
+        if (score < best.score) return best
 
         return {
           score,
-          board: better(score, best.score)
-            ? [newBoard]
-            : best.board.concat([newBoard])
+          board: score > best.score ? [newBoard] : best.board.concat([newBoard])
         }
       },
       {
-        score: AI === "x" ? Number.MIN_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+        score: Number.MIN_SAFE_INTEGER,
         board: undefined
       }
     )(game.getMoves(node.board))
@@ -92,10 +70,13 @@ const iterate = root => {
   }
 
   // back propegation
-  const score = game.hasWon(board.x) ? 1 : game.hasWon(board.o) ? 0 : 0.5
   while (node) {
     node.visits += 1
-    node.wins += score
+    node.wins += game.hasWon(node.board.turn)
+      ? 1
+      : game.hasWon(node.board.turn)
+      ? 0
+      : 0.5
     node = node.parent
   }
 }
@@ -139,32 +120,50 @@ const viz = (key, node, indent = "") => {
   )
 }
 
-const play = node => {
+const stats = [0, 0, 0]
+const play = (node, human) => {
+  if (!human) {
+    // setup game
+    console.log(`x: ${stats[0]}, o: ${stats[1]}, -: ${stats[2]}`)
+    rl.question(`\nhuman: `, s => {
+      game.doc()
+      play(node, s.split(""))
+    })
+    return
+  }
+
   const board = node.board
   if (game.isEnd(board)) {
-    console.log("\n")
+    // end of game
+    if (game.hasWon(board.x)) {
+      stats[0] += 1
+    } else if (game.hasWon(board.o)) {
+      stats[1] += 1
+    } else {
+      stats[2] += 1
+    }
+
     console.log(
-      game.hasWon(board[AI])
-        ? `WIN for ${AI}`
-        : game.hasWon(board[AI === "x" ? "o" : "x"])
-        ? `LOSS for ${AI}`
-        : `DRAW for ${AI}`
+      game.hasWon(board.x)
+        ? `WIN for x`
+        : game.hasWon(board.o)
+        ? `WIN for "o"`
+        : `DRAW`
     )
     game.draw(board)
 
-    game.doc()
     play(root)
     return
   }
 
-  if (board.turn === AI) {
+  if (!human.includes(board.turn)) {
     // think
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       iterate(node)
     }
     // viz("root", root)
 
-    play(getBestMove(node))
+    play(getBestMove(node), human)
   } else {
     game.draw(board)
     rl.question(`Make your move ${board.turn}: `, s => {
@@ -176,16 +175,15 @@ const play = node => {
       const m = Number(s)
       const newBoard = game.doMove(nth(m - 1)(game.MOVES))(board)
       const position = game.getPosition(newBoard)
-      if (position === game.getPosition(board)) return play(node)
+      if (position === game.getPosition(board)) return play(node, human)
       if (!node.children[position]) {
         // create node for human player move not yet in tree
         node.children[position] = createNode(newBoard, node)
       }
 
-      play(node.children[position])
+      play(node.children[position], human)
     })
   }
 }
 
-game.doc()
 play(root)
