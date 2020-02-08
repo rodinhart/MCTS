@@ -75,6 +75,8 @@ const prn = xs => JSON.stringify([...xs])
 
 assert(prn(partition(3)([1, 2, 3, 4, 5])) === "[[1,2,3],[4,5]]")
 
+const sum = xs => fold((a, b) => a + b, 0)(xs)
+
 module.exports = {
   any,
   map,
@@ -84,5 +86,6 @@ module.exports = {
   length,
   nth,
   partition,
-  prn
+  prn,
+  sum
 }

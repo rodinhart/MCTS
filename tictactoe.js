@@ -58,6 +58,7 @@ const draw = board =>
   )
 
 const getPosition = board => board.x | board.o
+const getHash = board => `${board.x}|${board.o}`
 
 const hasWon = ox => any(p => (p & ox) === p)(WINS)
 
@@ -74,6 +75,7 @@ module.exports = {
   doc,
   doMove,
   draw,
+  getHash,
   getMoves,
   getPosition,
   hasWon,

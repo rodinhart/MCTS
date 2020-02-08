@@ -1,8 +1,21 @@
 const readline = require("readline")
 
-const { fold, length, nth } = require("./IIterable.js")
-const {} = require("./lang.js")
+const { filter, fold, length, map, nth, sum } = require("./IIterable.js")
+const { get, thread } = require("./lang.js")
 const game = require("./tictactoe.js")
+
+const wrand = xs => {
+  const weights = [...xs]
+  const total = sum(weights)
+
+  let r = Math.random() * total
+  for (let i = 0; i < weights.length; i += 1) {
+    r -= weights[i]
+    if (r <= 0) return i
+  }
+
+  throw new Error("wrand failed.")
+}
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -18,46 +31,66 @@ const createNode = (board, parent) => ({
   board
 })
 
-const ubt = node =>
-  node.wins / node.visits +
-  Math.sqrt(2 * Math.log(node.parent.visits / node.visits))
+const ubt = node => {
+  if (node.visits === 0) throw new Error("Number of visits is 0")
+
+  return (
+    node.wins / node.visits +
+    Math.sqrt((2 * Math.log(node.parent.visits)) / node.visits)
+  )
+}
 
 const iterate = root => {
   // selection
   let node = root
-  while (!game.isEnd(node.board)) {
-    const best = fold(
-      (best, move) => {
-        const newBoard = game.doMove(move)(node.board)
-        const position = game.getPosition(newBoard)
-        const score =
-          node.children[position] && node.children[position].visits
-            ? ubt(node.children[position])
-            : Number.MAX_SAFE_INTEGER
+  do {
+    if (game.isEnd(node.board)) break
 
-        if (score < best.score) return best
+    const moves = thread(
+      game.getMoves(node.board),
+      map(move => {
+        const newBoard = game.doMove(move)(node.board)
+        const hash = game.getHash(newBoard)
 
         return {
-          score,
-          board: score > best.score ? [newBoard] : best.board.concat([newBoard])
+          node,
+          newBoard,
+          hash
         }
-      },
-      {
-        score: Number.MIN_SAFE_INTEGER,
-        board: undefined
-      }
-    )(game.getMoves(node.board))
+      })
+    )
 
-    const newBoard = best.board[Math.floor(best.board.length * Math.random())]
-    const position = game.getPosition(newBoard)
-    if (!node.children[position]) {
-      node.children[position] = createNode(newBoard, node) // expansion
-      node = node.children[position]
+    const unexplored = thread(
+      moves,
+      filter(
+        ({ node, hash }) => !node.children[hash] || !node.children[hash].visits
+      )
+    )
+
+    if (length(unexplored) !== 0) {
+      const index = wrand(map(() => 1)(unexplored))
+      node.children[nth(index)(unexplored).hash] = createNode(
+        nth(index)(unexplored).newBoard,
+        node
+      )
+      node = node.children[nth(index)(unexplored).hash]
+      // console.log(`Unexplored ${index}`, node)
       break
     }
 
-    node = node.children[position]
-  }
+    const explored = thread(
+      moves,
+      filter(
+        ({ node, hash }) => node.children[hash] && node.children[hash].visits
+      )
+    )
+
+    const index = wrand(
+      map(({ node, hash }) => ubt(node.children[hash]))(moves)
+    )
+    // console.log(`Explored ${index}`)
+    node = node.children[nth(index)(explored).hash]
+  } while (true)
 
   if (game.isEnd(node)) return // can't simulate
 
@@ -65,45 +98,54 @@ const iterate = root => {
   let board = node.board
   while (!game.isEnd(board)) {
     const moves = game.getMoves(board)
-    const move = nth(Math.floor(length(moves) * Math.random()))(moves)
+    const index = wrand(map(() => 1)(moves))
+    const move = nth(index)(moves)
     board = game.doMove(move)(board)
   }
 
   // back propegation
+  // game.draw(board)
   while (node) {
     node.visits += 1
-    node.wins += game.hasWon(node.board.turn)
-      ? 1
-      : game.hasWon(node.board.turn)
-      ? 0
-      : 0.5
+    if (game.hasWon(board[node.board.turn === "x" ? "o" : "x"])) {
+      node.wins += 1
+    } else if (!game.hasWon(board[node.board.turn])) {
+      node.wins += 0.5
+    }
+
     node = node.parent
   }
 }
 
+const getBestMoveX = node =>
+  thread(
+    Object.values(node.children),
+    fold(
+      (r, n) =>
+        console.log(r.visits, n.visits) || (n.visits > r.visits ? n : r),
+      {
+        visits: 0
+      }
+    )
+  )
+
 const getBestMove = node => {
-  const best = fold(
-    (best, [position, child]) => {
-      if (child.visits > best.visits) {
-        return {
-          visits: child.visits,
-          nodes: [child]
-        }
-      }
+  return thread(
+    Object.values(node.children),
+    map(node => {
+      const score = node.wins / node.visits
 
-      if (child.visits === best.visits) {
-        best.nodes.push(child)
+      return {
+        node,
+        score
       }
+    }),
+    nodes => {
+      const index = wrand(map(get("score"))(nodes))
 
-      return best
-    },
-    {
-      visits: Number.MIN_SAFE_INTEGER,
-      nodes: []
+      return nth(index)(nodes).node
     }
-  )(Object.entries(node.children))
-
-  return best.nodes[Math.floor(best.nodes.length * Math.random())]
+  )
 }
 
 // game
@@ -116,16 +158,40 @@ const root = createNode({
 const viz = (key, node, indent = "") => {
   console.log(`${indent}${node.wins}/${node.visits} (${key})`)
   Object.entries(node.children).forEach(([key, child]) =>
-    viz(key, child, indent + " ")
+    viz(key, child, indent + "  ")
   )
 }
 
+let games = 0
 const stats = [0, 0, 0]
 const play = (node, human) => {
   if (!human) {
     // setup game
     console.log(`x: ${stats[0]}, o: ${stats[1]}, -: ${stats[2]}`)
+
+    if (games) {
+      games -= 1
+      if (games) {
+        play(node, [])
+        return
+      } else {
+        // viz("root", root)
+      }
+    }
+
     rl.question(`\nhuman: `, s => {
+      if (s === "q") {
+        rl.close()
+        return
+      }
+
+      if (s === "") {
+        stats[0] = 0
+        stats[1] = 0
+        stats[2] = 0
+        games = 100
+      }
+
       game.doc()
       play(node, s.split(""))
     })
